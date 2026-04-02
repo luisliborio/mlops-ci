@@ -1,0 +1,367 @@
+....MLflow server run....
+mlflow server \
+  --backend-store-uri file:./mlruns \
+  --default-artifact-root ./mlruns
+
+mlflow server \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root ./artifacts
+
+
+.....test app.....
+curl -X POST http://localhost:3001/predict \
+  -H "Content-Type: application/json" \
+  -d '{"features": [0.00632, 18, 2.31, 0, 0.538, 6.575, 65.2, 4.09, 1, 296, 15.3, 396.9, 4.98]}'
+
+....train.py....
+import os
+import re
+import pandas as pd
+import joblib
+from sklearn.ensemble import RandomForestRegressor
+import mlflow
+import mlflow.sklearn
+
+
+# MLflow Setup
+print("Setting up MLflow...")
+
+#mlflow.set_tracking_uri("http://localhost:5000")
+#mlflow.set_experiment("boston-housing")
+
+# mlflow.set_tracking_uri("file:./mlruns") 
+
+# mlflow.set_experiment("boston-housing")
+
+# Check if we are in GitHub Actions
+if os.getenv("GITHUB_ACTIONS") == "true":
+    # Use a local SQLite database for CI - much more stable
+    tracking_uri = "sqlite:///mlflow.db"
+else:
+    # Use your local server for development
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+
+mlflow.set_tracking_uri(tracking_uri)
+mlflow.set_experiment("boston-housing")
+
+print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
+
+
+
+print("MLflow setup completed!")
+# Load Training Data
+
+X_train = pd.read_csv("data/train/X_train.csv")
+y_train = pd.read_csv("data/train/y_train.csv")
+y_train = y_train.values.ravel()
+
+
+# Start MLflow Run
+print("starting MLflow run for model training...")
+
+with mlflow.start_run():
+
+    # Create Model
+    model = RandomForestRegressor(
+        n_estimators=200,
+        random_state=42
+    )
+
+    # Train Model
+    model.fit(X_train, y_train)
+    print("Model training completed!")
+
+    # Log parameters
+    mlflow.log_param("n_estimators", 200)
+    mlflow.log_param("random_state", 42)
+
+    # Log basic info
+    mlflow.log_metric("num_training_samples", len(X_train))
+
+    # Log model artifact
+    mlflow.sklearn.log_model(model, "model")
+
+print("MLflow run completed!")
+
+# VERSIONING LOGIC
+
+os.makedirs("models", exist_ok=True)
+
+current_model_file = "models/current_model.txt"
+
+if os.path.exists(current_model_file):
+
+    with open(current_model_file, "r") as f:
+        current_model_name = f.read().strip()
+
+    match = re.search(r"model_v(\d+)\.joblib", current_model_name)
+
+    if match:
+        current_version = int(match.group(1))
+        new_version = current_version + 1
+    else:
+        new_version = 1
+else:
+    new_version = 1
+
+# New model name
+new_model_name = f"model_v{new_version}.joblib"
+model_path = os.path.join("models", new_model_name)
+
+# Save model locally
+joblib.dump(model, model_path)
+print(f"Model saved at: {model_path}")
+
+# Update active model pointer
+with open(current_model_file, "w") as f:
+    f.write(new_model_name)
+
+print(f"Active model updated to: {new_model_name}")
+
+....test_model.py....
+import os
+import pandas as pd
+import joblib
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import mlflow
+
+
+# MLflow Setup
+# MLflow Setup
+print("Setting up MLflow for testing...")
+
+# mlflow.set_tracking_uri("http://localhost:5000")
+# mlflow.set_experiment("boston-housing")
+
+
+# Check if we are in GitHub Actions or have a specific URI set
+tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+mlflow.set_tracking_uri(tracking_uri)
+
+print(f"Using tracking URI: {tracking_uri}")
+
+mlflow.set_experiment("boston-housing")
+
+
+# Load Test Data
+
+X_test = pd.read_csv("data/test/X_test.csv")
+y_test = pd.read_csv("data/test/y_test.csv")
+y_test = y_test.values.ravel()
+
+MODEL_DIR = "models"
+CURRENT_MODEL_FILE = os.path.join(MODEL_DIR, "current_model.txt")
+
+# Read active model name
+with open(CURRENT_MODEL_FILE, "r") as f:
+    model_name = f.read().strip()
+
+model_path = os.path.join(MODEL_DIR, model_name)
+
+# Load model
+model = joblib.load(model_path)
+
+
+# Start MLflow Run
+
+with mlflow.start_run():
+
+    # Predictions
+    y_pred = model.predict(X_test)
+
+    # Metrics
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+
+    print(f"Mean Squared Error (MSE): {mse:.4f}")
+    print(f"Mean Absolute Error (MAE): {mae:.4f}")
+
+    # Log metrics to MLflow
+    mlflow.log_metric("mse", mse)
+    mlflow.log_metric("mae", mae)
+
+    # Also log model version
+    import re
+    match = re.search(r"model_v(\d+)\.joblib", model_name)
+    if match:
+        mlflow.log_param("model_version", int(match.group(1)))
+
+    # Assertions (quality gate)
+    assert mse < 18, "MSE is too high"
+    assert mae < 3.0, "MAE is too high"
+
+    print("Model performance test passed!")
+
+....requirments.txt....
+flask
+pytest
+scikit-learn
+pandas
+joblib
+numpy
+mlflow
+gunicorn
+
+.....docker file....
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY . /app
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 3001
+
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:3001", "app:app"]
+
+.....docker compose.....
+services:
+  housing-api:
+    build: .
+    container_name: housing-api
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mlflow
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server 
+      --host 0.0.0.0 
+      --port 5000
+
+.....app.py....
+import os
+import pandas as pd
+import numpy as np
+import joblib
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+MODEL_DIR = "models"
+CURRENT_MODEL_FILE = os.path.join(MODEL_DIR, "current_model.txt")
+
+
+# Load Active Model
+
+with open(CURRENT_MODEL_FILE, "r") as f:
+    model_name = f.read().strip()
+
+model_path = os.path.join(MODEL_DIR, model_name)
+
+model = joblib.load(model_path)
+
+print(f"Loaded model: {model_name}")
+
+
+# Routes
+
+
+@app.route("/")
+def home():
+    return "Boston Housing API Running"
+
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    try:
+        data = request.get_json()
+
+        # Expecting 13 features
+        features = np.array(data["features"]).reshape(1, -1)
+
+        prediction = model.predict(features)
+
+        return jsonify({
+            "prediction": float(prediction[0]),
+            "model_version": model_name
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+# Run App
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=3001)
+
+....ml_pipeline.yml...
+name: CI/CD for Dockerized ML Flask App 
+
+on: 
+  push: 
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  train-and-test:
+    runs-on: ubuntu-latest 
+
+    # MLflow runs locally in CI
+    env:
+      # Use SQLite to avoid the Permission Denied folder issue
+      MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
+
+    steps:
+      - name: Checkout code 
+        uses: actions/checkout@v4 
+      
+      - name: Setup Python 
+        uses: actions/setup-python@v5 
+        with:
+          python-version: '3.11'
+        
+      - name: Install Dependencies 
+        run: |
+          python -m pip install --upgrade pip 
+          pip install -r requirements.txt 
+        
+      - name: Train model 
+        run: python train.py 
+
+      - name: Run model tests 
+        run: python test_model.py 
+
+      # Optional but VERY useful 
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns
+          path: mlruns/
+
+  build-and-publish:
+    needs: train-and-test 
+    runs-on: ubuntu-latest 
+
+    steps:
+      - name: Checkout code 
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx 
+        uses: docker/setup-buildx-action@v3 
+
+      - name: Login to Dockerhub 
+        uses: docker/login-action@v2 
+        with: 
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker Image
+        id: build-image 
+        uses: docker/build-push-action@v4 
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/ci-app:latest 
+
+      - name: Image digest
+        run: echo ${{ steps.build-image.outputs.digest }}
