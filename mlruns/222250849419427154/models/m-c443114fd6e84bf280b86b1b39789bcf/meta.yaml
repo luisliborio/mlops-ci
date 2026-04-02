@@ -1,0 +1,10 @@
+artifact_location: /home/clara/luis/phd/mlops/ci-dc/mlruns/222250849419427154/models/m-c443114fd6e84bf280b86b1b39789bcf/artifacts
+creation_timestamp: 1775131798585
+experiment_id: '222250849419427154'
+last_updated_timestamp: 1775131801487
+model_id: m-c443114fd6e84bf280b86b1b39789bcf
+model_type: ''
+name: model
+source_run_id: 2284458904e648f5a3564f02a7962349
+status: 2
+status_message: null

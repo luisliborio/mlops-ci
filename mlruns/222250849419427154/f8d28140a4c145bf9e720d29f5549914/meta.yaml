@@ -1,0 +1,14 @@
+artifact_uri: /home/clara/luis/phd/mlops/ci-dc/mlruns/222250849419427154/f8d28140a4c145bf9e720d29f5549914/artifacts
+end_time: 1775132030003
+entry_point_name: ''
+experiment_id: '222250849419427154'
+lifecycle_stage: active
+run_id: f8d28140a4c145bf9e720d29f5549914
+run_name: ambitious-lynx-75
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1775132029834
+status: 3
+tags: []
+user_id: clara

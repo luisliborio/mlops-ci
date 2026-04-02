@@ -1,0 +1,14 @@
+artifact_uri: /home/clara/luis/phd/mlops/ci-dc/mlruns/222250849419427154/2284458904e648f5a3564f02a7962349/artifacts
+end_time: 1775131801544
+entry_point_name: ''
+experiment_id: '222250849419427154'
+lifecycle_stage: active
+run_id: 2284458904e648f5a3564f02a7962349
+run_name: delightful-stag-169
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1775131798009
+status: 3
+tags: []
+user_id: clara

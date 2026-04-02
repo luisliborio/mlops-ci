@@ -1,0 +1,7 @@
+artifact_location: /home/clara/luis/phd/mlops/ci-dc/mlruns/222250849419427154
+creation_time: 1775131797858
+experiment_id: '222250849419427154'
+last_update_time: 1775131797858
+lifecycle_stage: active
+name: boston-housing
+workspace: default
